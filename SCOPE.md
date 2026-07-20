@@ -1,4 +1,4 @@
-# tf-mod-aws-batch — SCOPE
+# terraform-aws-batch — SCOPE
 
 Composite module for AWS Batch: a compute environment, a job queue, a job definition,
 and an optional fair-share scheduling policy. It provisions managed batch compute
@@ -21,25 +21,25 @@ The module manages **all** of the following (allow-list):
 
 Referenced by `arn`/`id`, never created here:
 
-- VPC subnets — `subnet_ids` (from `tf-mod-aws-vpc`)
-- Security groups — `security_group_ids` (from `tf-mod-aws-security-group`)
-- Batch service role / EC2 instance role + instance profile / job execution & job role / Spot fleet role — `arn` (from `tf-mod-aws-iam-role`)
-- KMS CMK for EBS / log encryption — `kms_key_arn` (from `tf-mod-aws-kms`)
-- ECR image — image URI (from `tf-mod-aws-ecr`)
-- CloudWatch log group for job logs — `log_group_name` (from `tf-mod-aws-cloudwatch-log-group`)
-- EC2 launch template (optional) — id (from `tf-mod-aws-launch-template`)
+- VPC subnets — `subnet_ids` (from `terraform-aws-vpc`)
+- Security groups — `security_group_ids` (from `terraform-aws-security-group`)
+- Batch service role / EC2 instance role + instance profile / job execution & job role / Spot fleet role — `arn` (from `terraform-aws-iam-role`)
+- KMS CMK for EBS / log encryption — `kms_key_arn` (from `terraform-aws-kms`)
+- ECR image — image URI (from `terraform-aws-ecr`)
+- CloudWatch log group for job logs — `log_group_name` (from `terraform-aws-cloudwatch-log-group`)
+- EC2 launch template (optional) — id (from `terraform-aws-launch-template`)
 
 ## Consumes
 
 | Input | Type | Source module |
 |---|---|---|
-| `subnet_ids` | `list(string)` | `tf-mod-aws-vpc` |
-| `security_group_ids` | `list(string)` | `tf-mod-aws-security-group` |
-| `service_role_arn` | `string` (IAM role ARN, optional with SLR) | `tf-mod-aws-iam-role` |
-| `instance_role_arn` | `string` (instance profile ARN, EC2 only) | `tf-mod-aws-iam-role` |
-| `spot_iam_fleet_role_arn` | `string` (Spot fleet role ARN, Spot only) | `tf-mod-aws-iam-role` |
-| `job_definition.execution_role_arn` / `job_role_arn` | `string` (IAM role ARN) | `tf-mod-aws-iam-role` |
-| `kms_key_arn` | `string` (KMS key ARN) | `tf-mod-aws-kms` |
+| `subnet_ids` | `list(string)` | `terraform-aws-vpc` |
+| `security_group_ids` | `list(string)` | `terraform-aws-security-group` |
+| `service_role_arn` | `string` (IAM role ARN, optional with SLR) | `terraform-aws-iam-role` |
+| `instance_role_arn` | `string` (instance profile ARN, EC2 only) | `terraform-aws-iam-role` |
+| `spot_iam_fleet_role_arn` | `string` (Spot fleet role ARN, Spot only) | `terraform-aws-iam-role` |
+| `job_definition.execution_role_arn` / `job_role_arn` | `string` (IAM role ARN) | `terraform-aws-iam-role` |
+| `kms_key_arn` | `string` (KMS key ARN) | `terraform-aws-kms` |
 
 ## Required IAM permissions
 
@@ -74,7 +74,7 @@ use a CMK, also `kms:DescribeKey` on the key ARN.
   `awsvpc` networking and typically private subnets with a NAT/VPC endpoints for image pulls.
 - **ECR/image:** container images reachable from the compute environment.
 - **CMK (optional but default-on posture):** EC2/Spot EBS volumes are encrypted with a CMK
-  set on the **launch template** (`tf-mod-aws-launch-template`); Fargate ephemeral storage is
+  set on the **launch template** (`terraform-aws-launch-template`); Fargate ephemeral storage is
   AWS-managed-encrypted automatically; log encryption is via the CMK on the CloudWatch log group.
 - **Region:** AWS Batch is regional with no us-east-1 global-service coupling; the module
   declares no `region` variable and inherits the caller's provider.

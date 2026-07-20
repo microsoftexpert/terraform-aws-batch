@@ -37,19 +37,19 @@ Whether it's a star, a professional connection, or a coffee, every gesture helps
 
 ## 🗺️ Where this fits in the family
 
-`tf-mod-aws-batch` is a **leaf consumer** — it depends on the IAM, networking, KMS, container-registry, and logging foundations, and is itself consumed by orchestration (EventBridge / Step Functions submitting jobs).
+`terraform-aws-batch` is a **leaf consumer** — it depends on the IAM, networking, KMS, container-registry, and logging foundations, and is itself consumed by orchestration (EventBridge / Step Functions submitting jobs).
 
 ```mermaid
 flowchart LR
- iam["tf-mod-aws-iam-role<br/>service / instance / job roles"]
- vpc["tf-mod-aws-vpc<br/>private subnets"]
- sg["tf-mod-aws-security-group<br/>egress-only"]
- kms["tf-mod-aws-kms<br/>CMK"]
- ecr["tf-mod-aws-ecr<br/>image URI"]
- lt["tf-mod-aws-launch-template<br/>EC2 EBS / CMK"]
- log["tf-mod-aws-cloudwatch-log-group<br/>job logs"]
- batch["tf-mod-aws-batch"]
- evb["tf-mod-aws-eventbridge<br/>scheduled SubmitJob"]
+ iam["terraform-aws-iam-role<br/>service / instance / job roles"]
+ vpc["terraform-aws-vpc<br/>private subnets"]
+ sg["terraform-aws-security-group<br/>egress-only"]
+ kms["terraform-aws-kms<br/>CMK"]
+ ecr["terraform-aws-ecr<br/>image URI"]
+ lt["terraform-aws-launch-template<br/>EC2 EBS / CMK"]
+ log["terraform-aws-cloudwatch-log-group<br/>job logs"]
+ batch["terraform-aws-batch"]
+ evb["terraform-aws-eventbridge<br/>scheduled SubmitJob"]
 
  iam -->|"role arns"| batch
  vpc -->|"subnet_ids"| batch
@@ -69,7 +69,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
- subgraph mod["tf-mod-aws-batch"]
+ subgraph mod["terraform-aws-batch"]
  ce["aws_batch_compute_environment.this<br/>(keystone)<br/>MANAGED · Fargate/EC2/Spot"]
  sp["aws_batch_scheduling_policy.this<br/>optional, guarded for_each<br/>fair-share"]
  jq["aws_batch_job_queue.this<br/>binds CE at order 0"]
@@ -134,7 +134,7 @@ Least-privilege actions the **Terraform execution identity** needs to manage thi
 - **`iam:PassRole`** for: the Batch service role (if explicit), the EC2 instance profile (EC2/Spot compute), the Spot fleet role `AmazonEC2SpotFleetTaggingRole` (Spot only — [Spot fleet roles](https://docs.aws.amazon.com/batch/latest/userguide/spot-fleet-roles-cli.html)), and the job definition's execution role + job role.
 - **Networking.** Subnets and security groups must exist in the target VPC. Fargate uses `awsvpc` networking and needs outbound reachability to ECR / STS / CloudWatch Logs — use **private subnets with a NAT gateway or interface VPC endpoints**, never an inbound public path. Security groups attached to Fargate compute are **required**.
 - **Container image.** The image referenced by `container_properties.image` must be reachable from the compute environment (ECR pull permissions on the execution role; network path to the registry).
-- **CMK (optional, default-on posture).** EC2 EBS / managed storage and log encryption can use a CMK. The CMK is set on the **EC2 launch template** (`tf-mod-aws-launch-template`) for EC2/Spot, or via the log group for `awslogs`; Fargate ephemeral storage is AWS-managed-encrypted automatically.
+- **CMK (optional, default-on posture).** EC2 EBS / managed storage and log encryption can use a CMK. The CMK is set on the **EC2 launch template** (`terraform-aws-launch-template`) for EC2/Spot, or via the log group for `awslogs`; Fargate ephemeral storage is AWS-managed-encrypted automatically.
 - **Region constraint.** None — AWS Batch is a regional service with no us-east-1 global coupling. The module declares no `region` variable; it inherits the caller's provider.
 - **Service quotas** (fixed, per-Region — [AWS Batch service quotas](https://docs.aws.amazon.com/batch/latest/userguide/service_limits.html)):
  - **50** compute environments across ECS + EKS · **50** job queues · **5** compute environments per EKS cluster.
@@ -147,7 +147,7 @@ Least-privilege actions the **Terraform execution identity** needs to manage thi
 ## 📁 Module Structure
 
 ```
-tf-mod-aws-batch/
+terraform-aws-batch/
 ├── providers.tf # required_providers (aws >= 6.0, < 7.0); no provider block
 ├── variables.tf # name → CE config → roles → compute_resources → queue → job_definition → scheduling_policy → tags
 ├── main.tf # compute environment + queue + definition (+ optional scheduling policy); container_properties rendered in locals
@@ -164,11 +164,11 @@ Smallest working call — a Fargate compute environment, a queue, and a job defi
 
 ```hcl
 module "etl_batch" {
-  source = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
 
   name               = "casey-etl"
-  subnet_ids         = module.vpc.private_subnet_ids # from tf-mod-aws-vpc
-  security_group_ids = [module.batch_sg.id]          # from tf-mod-aws-security-group
+  subnet_ids         = module.vpc.private_subnet_ids # from terraform-aws-vpc
+  security_group_ids = [module.batch_sg.id]          # from terraform-aws-security-group
 
   # compute_resources defaults to Fargate, max 16 vCPU — secure default.
 
@@ -179,7 +179,7 @@ module "etl_batch" {
   job_definition = {
     name = "casey-etl-job"
     container_properties = {
-      image              = "${module.ecr.repository_url}:latest" # from tf-mod-aws-ecr
+      image              = "${module.ecr.repository_url}:latest" # from terraform-aws-ecr
       execution_role_arn = module.exec_role.arn                  # ECR pull / log push
       job_role_arn       = module.job_role.arn                   # in-container AWS access
       vcpu               = "0.5"
@@ -202,16 +202,16 @@ module "etl_batch" {
 
 | Input | Type | Source module |
 |---|---|---|
-| `subnet_ids` | `list(string)` | `tf-mod-aws-vpc` |
-| `security_group_ids` | `list(string)` | `tf-mod-aws-security-group` |
-| `service_role_arn` *(optional with SLR)* | `string` (IAM role ARN) | `tf-mod-aws-iam-role` |
-| `instance_role_arn` *(EC2/Spot only)* | `string` (instance-profile ARN) | `tf-mod-aws-iam-role` |
-| `spot_iam_fleet_role_arn` *(Spot only)* | `string` (IAM role ARN) | `tf-mod-aws-iam-role` |
-| `job_definition.container_properties.execution_role_arn` / `.job_role_arn` | `string` (IAM role ARN) | `tf-mod-aws-iam-role` |
-| `job_definition.container_properties.image` | `string` (image URI) | `tf-mod-aws-ecr` |
-| `compute_resources.launch_template` *(EC2/Spot, CMK-encrypted EBS)* | `object` (LT id/name/version) | `tf-mod-aws-launch-template` |
-| `eks_configuration.eks_cluster_arn` *(EKS-on-Batch)* | `string` (EKS cluster ARN) | `tf-mod-aws-eks` |
-| job log group (via `log_configuration.options["awslogs-group"]`) | `string` (log-group name) | `tf-mod-aws-cloudwatch-log-group` |
+| `subnet_ids` | `list(string)` | `terraform-aws-vpc` |
+| `security_group_ids` | `list(string)` | `terraform-aws-security-group` |
+| `service_role_arn` *(optional with SLR)* | `string` (IAM role ARN) | `terraform-aws-iam-role` |
+| `instance_role_arn` *(EC2/Spot only)* | `string` (instance-profile ARN) | `terraform-aws-iam-role` |
+| `spot_iam_fleet_role_arn` *(Spot only)* | `string` (IAM role ARN) | `terraform-aws-iam-role` |
+| `job_definition.container_properties.execution_role_arn` / `.job_role_arn` | `string` (IAM role ARN) | `terraform-aws-iam-role` |
+| `job_definition.container_properties.image` | `string` (image URI) | `terraform-aws-ecr` |
+| `compute_resources.launch_template` *(EC2/Spot, CMK-encrypted EBS)* | `object` (LT id/name/version) | `terraform-aws-launch-template` |
+| `eks_configuration.eks_cluster_arn` *(EKS-on-Batch)* | `string` (EKS cluster ARN) | `terraform-aws-eks` |
+| job log group (via `log_configuration.options["awslogs-group"]`) | `string` (log-group name) | `terraform-aws-cloudwatch-log-group` |
 
 ### Emits
 
@@ -238,7 +238,7 @@ module "etl_batch" {
 
 ```hcl
 module "batch" {
-  source = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
 
   name               = "casey-fargate"
   subnet_ids         = module.vpc.private_subnet_ids
@@ -259,22 +259,22 @@ module "batch" {
 </details>
 
 <details>
-<summary><strong>2 · Wire networking from <code>tf-mod-aws-vpc</code> + <code>tf-mod-aws-security-group</code></strong></summary>
+<summary><strong>2 · Wire networking from <code>terraform-aws-vpc</code> + <code>terraform-aws-security-group</code></strong></summary>
 
 ```hcl
 module "vpc" {
-  source = "git::https://github.com/microsoftexpert/tf-mod-aws-vpc?ref=v1.0.0"
+  source = "git::https://github.com/microsoftexpert/terraform-aws-vpc?ref=v1.0.0"
   #... emits private_subnet_ids
 }
 
 module "batch_sg" {
-  source = "git::https://github.com/microsoftexpert/tf-mod-aws-security-group?ref=v1.0.0"
+  source = "git::https://github.com/microsoftexpert/terraform-aws-security-group?ref=v1.0.0"
   vpc_id = module.vpc.id
   # egress-only: Batch workloads pull images and call APIs outbound; no ingress
 }
 
 module "batch" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-private"
   subnet_ids         = module.vpc.private_subnet_ids # private subnets — secure default
   security_group_ids = [module.batch_sg.id]
@@ -289,12 +289,12 @@ module "batch" {
 </details>
 
 <details>
-<summary><strong>3 · Distinct execution role + job role from <code>tf-mod-aws-iam-role</code></strong></summary>
+<summary><strong>3 · Distinct execution role + job role from <code>terraform-aws-iam-role</code></strong></summary>
 
 ```hcl
 # Execution role: ECR pull + CloudWatch Logs push (AWS-managed policy)
 module "exec_role" {
-  source              = "git::https://github.com/microsoftexpert/tf-mod-aws-iam-role?ref=v1.0.0"
+  source              = "git::https://github.com/microsoftexpert/terraform-aws-iam-role?ref=v1.0.0"
   name                = "casey-batch-exec"
   assume_role_policy  = data.aws_iam_policy_document.ecs_tasks_trust.json
   managed_policy_arns = ["arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"]
@@ -302,14 +302,14 @@ module "exec_role" {
 
 # Job role: least-privilege in-container AWS access (e.g. one S3 prefix)
 module "job_role" {
-  source              = "git::https://github.com/microsoftexpert/tf-mod-aws-iam-role?ref=v1.0.0"
+  source              = "git::https://github.com/microsoftexpert/terraform-aws-iam-role?ref=v1.0.0"
   name                = "casey-batch-job"
   assume_role_policy  = data.aws_iam_policy_document.ecs_tasks_trust.json
   managed_policy_arns = [module.s3_read_policy.arn]
 }
 
 module "batch" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-roles"
   subnet_ids         = module.vpc.private_subnet_ids
   security_group_ids = [module.batch_sg.id]
@@ -328,11 +328,11 @@ module "batch" {
 </details>
 
 <details>
-<summary><strong>4 · Image from <code>tf-mod-aws-ecr</code> + logs to <code>tf-mod-aws-cloudwatch-log-group</code></strong></summary>
+<summary><strong>4 · Image from <code>terraform-aws-ecr</code> + logs to <code>terraform-aws-cloudwatch-log-group</code></strong></summary>
 
 ```hcl
 module "batch" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-logged"
   subnet_ids         = module.vpc.private_subnet_ids
   security_group_ids = [module.batch_sg.id]
@@ -341,12 +341,12 @@ module "batch" {
   job_definition = {
     name = "casey-logged-job"
     container_properties = {
-      image              = "${module.ecr.repository_url}:v2.3.1" # pinned tag, from tf-mod-aws-ecr
+      image              = "${module.ecr.repository_url}:v2.3.1" # pinned tag, from terraform-aws-ecr
       execution_role_arn = module.exec_role.arn
       log_configuration = {
         log_driver = "awslogs" # secure default
         options = {
-          "awslogs-group"         = module.job_logs.name # from tf-mod-aws-cloudwatch-log-group
+          "awslogs-group"         = module.job_logs.name # from terraform-aws-cloudwatch-log-group
           "awslogs-region"        = "us-east-1"
           "awslogs-stream-prefix" = "casey-logged"
         }
@@ -367,7 +367,7 @@ provider "aws" {
 }
 
 module "batch" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-tagged"
   subnet_ids         = module.vpc.private_subnet_ids
   security_group_ids = [module.batch_sg.id]
@@ -392,7 +392,7 @@ module "batch" {
 
 ```hcl
 module "batch" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-team"
   subnet_ids         = module.vpc.private_subnet_ids
   security_group_ids = [module.batch_sg.id]
@@ -417,7 +417,7 @@ module "batch" {
 
 ```hcl
 module "batch_ec2" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-ec2"
   subnet_ids         = module.vpc.private_subnet_ids
   security_group_ids = [module.batch_sg.id]
@@ -453,7 +453,7 @@ module "batch_ec2" {
 
 ```hcl
 module "batch_spot" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-spot"
   subnet_ids         = module.vpc.private_subnet_ids
   security_group_ids = [module.batch_sg.id]
@@ -481,19 +481,19 @@ module "batch_spot" {
 </details>
 
 <details>
-<summary><strong>9 · EC2/Spot EBS encrypted with a CMK via <code>tf-mod-aws-launch-template</code></strong></summary>
+<summary><strong>9 · EC2/Spot EBS encrypted with a CMK via <code>terraform-aws-launch-template</code></strong></summary>
 
 ```hcl
 # The launch template is where CMK-encrypted EBS lives for EC2/Spot Batch compute.
 module "batch_lt" {
-  source          = "git::https://github.com/microsoftexpert/tf-mod-aws-launch-template?ref=v1.0.0"
+  source          = "git::https://github.com/microsoftexpert/terraform-aws-launch-template?ref=v1.0.0"
   name            = "casey-batch-lt"
-  ebs_kms_key_arn = module.kms.arn # customer-managed CMK from tf-mod-aws-kms
+  ebs_kms_key_arn = module.kms.arn # customer-managed CMK from terraform-aws-kms
   ebs_encrypted   = true
 }
 
 module "batch" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-cmk"
   subnet_ids         = module.vpc.private_subnet_ids
   security_group_ids = [module.batch_sg.id]
@@ -523,7 +523,7 @@ module "batch" {
 
 ```hcl
 module "batch" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-secrets"
   subnet_ids         = module.vpc.private_subnet_ids
   security_group_ids = [module.batch_sg.id]
@@ -539,7 +539,7 @@ module "batch" {
       environment = { LOG_LEVEL = "info" } # plain config only — NEVER secrets
 
       secrets = {
-        DB_PASSWORD = module.db_secret.arn # Secrets Manager ARN from tf-mod-aws-secrets-manager
+        DB_PASSWORD = module.db_secret.arn # Secrets Manager ARN from terraform-aws-secrets-manager
         API_KEY     = "${module.api_secret.arn}:key::"
       }
     }
@@ -553,7 +553,7 @@ module "batch" {
 
 ```hcl
 module "batch" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-resilient"
   subnet_ids         = module.vpc.private_subnet_ids
   security_group_ids = [module.batch_sg.id]
@@ -580,7 +580,7 @@ module "batch" {
 
 ```hcl
 module "batch" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-fairshare"
   subnet_ids         = module.vpc.private_subnet_ids
   security_group_ids = [module.batch_sg.id]
@@ -612,7 +612,7 @@ module "batch" {
 
 ```hcl
 module "batch" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-efs"
   subnet_ids         = module.vpc.private_subnet_ids
   security_group_ids = [module.batch_sg.id]
@@ -625,7 +625,7 @@ module "batch" {
       volumes = [{
         name = "shared"
         efs_volume_configuration = {
-          file_system_id     = module.efs.id # from tf-mod-aws-efs
+          file_system_id     = module.efs.id # from terraform-aws-efs
           transit_encryption = "ENABLED"     # secure default
           access_point_id    = module.efs.access_point_id
           iam                = "ENABLED"
@@ -643,7 +643,7 @@ module "batch" {
 
 ```hcl
 module "batch" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-bounded"
   subnet_ids         = module.vpc.private_subnet_ids
   security_group_ids = [module.batch_sg.id]
@@ -673,41 +673,41 @@ module "batch" {
 ```hcl
 # ── Foundations ─────────────────────────────────────────────────────────────
 module "vpc" {
-  source = "git::https://github.com/microsoftexpert/tf-mod-aws-vpc?ref=v1.0.0"
+  source = "git::https://github.com/microsoftexpert/terraform-aws-vpc?ref=v1.0.0"
   #... emits private_subnet_ids
 }
 
 module "batch_sg" {
-  source = "git::https://github.com/microsoftexpert/tf-mod-aws-security-group?ref=v1.0.0"
+  source = "git::https://github.com/microsoftexpert/terraform-aws-security-group?ref=v1.0.0"
   vpc_id = module.vpc.id # egress-only
 }
 
 module "kms" {
-  source = "git::https://github.com/microsoftexpert/tf-mod-aws-kms?ref=v1.0.0"
+  source = "git::https://github.com/microsoftexpert/terraform-aws-kms?ref=v1.0.0"
   alias  = "casey/batch"
 }
 
 module "ecr" {
-  source = "git::https://github.com/microsoftexpert/tf-mod-aws-ecr?ref=v1.0.0"
+  source = "git::https://github.com/microsoftexpert/terraform-aws-ecr?ref=v1.0.0"
   name   = "casey-etl"
 }
 
 module "job_logs" {
-  source            = "git::https://github.com/microsoftexpert/tf-mod-aws-cloudwatch-log-group?ref=v1.0.0"
+  source            = "git::https://github.com/microsoftexpert/terraform-aws-cloudwatch-log-group?ref=v1.0.0"
   name              = "/casey/batch/etl"
   kms_key_arn       = module.kms.arn
   retention_in_days = 90
 }
 
 module "exec_role" {
-  source              = "git::https://github.com/microsoftexpert/tf-mod-aws-iam-role?ref=v1.0.0"
+  source              = "git::https://github.com/microsoftexpert/terraform-aws-iam-role?ref=v1.0.0"
   name                = "casey-batch-exec"
   assume_role_policy  = data.aws_iam_policy_document.ecs_tasks_trust.json
   managed_policy_arns = ["arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"]
 }
 
 module "job_role" {
-  source              = "git::https://github.com/microsoftexpert/tf-mod-aws-iam-role?ref=v1.0.0"
+  source              = "git::https://github.com/microsoftexpert/terraform-aws-iam-role?ref=v1.0.0"
   name                = "casey-batch-job"
   assume_role_policy  = data.aws_iam_policy_document.ecs_tasks_trust.json
   managed_policy_arns = [module.data_policy.arn]
@@ -715,7 +715,7 @@ module "job_role" {
 
 # ── This module — runnable Fargate pipeline ───────────────────────────────────
 module "batch" {
-  source             = "git::https://github.com/microsoftexpert/tf-mod-aws-batch?ref=v1.0.0"
+  source             = "git::https://github.com/microsoftexpert/terraform-aws-batch?ref=v1.0.0"
   name               = "casey-etl"
   subnet_ids         = module.vpc.private_subnet_ids # private — secure default
   security_group_ids = [module.batch_sg.id]          # egress-only
@@ -749,7 +749,7 @@ module "batch" {
 
 # ── Scheduled submission via EventBridge ──────────────────────────────────────
 module "nightly_trigger" {
-  source               = "git::https://github.com/microsoftexpert/tf-mod-aws-eventbridge?ref=v1.0.0"
+  source               = "git::https://github.com/microsoftexpert/terraform-aws-eventbridge?ref=v1.0.0"
   rule_name            = "casey-etl-nightly"
   schedule_expression  = "cron(0 3 * * ? *)"
   target_arn           = module.batch.job_queue_arn      # submit to the queue
@@ -905,7 +905,7 @@ tags_all = { "DataClass" = "confidential", "Environment" = "prod" }
 - [Amazon EC2 Spot fleet roles for Batch](https://docs.aws.amazon.com/batch/latest/userguide/spot-fleet-roles-cli.html)
 - [Job queues](https://docs.aws.amazon.com/batch/latest/userguide/job_queues.html) · [Compute environments](https://docs.aws.amazon.com/batch/latest/userguide/compute_environments.html)
 - Terraform: [`aws_batch_compute_environment`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/batch_compute_environment) · [`aws_batch_job_queue`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/batch_job_queue) · [`aws_batch_job_definition`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/batch_job_definition) · [`aws_batch_scheduling_policy`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/batch_scheduling_policy)
-- Sibling modules: `tf-mod-aws-iam-role`, `tf-mod-aws-vpc`, `tf-mod-aws-security-group`, `tf-mod-aws-kms`, `tf-mod-aws-ecr`, `tf-mod-aws-launch-template`, `tf-mod-aws-cloudwatch-log-group`, `tf-mod-aws-eventbridge`
+- Sibling modules: `terraform-aws-iam-role`, `terraform-aws-vpc`, `terraform-aws-security-group`, `terraform-aws-kms`, `terraform-aws-ecr`, `terraform-aws-launch-template`, `terraform-aws-cloudwatch-log-group`, `terraform-aws-eventbridge`
 - Module internals: `SCOPE.md`
 
 ---
